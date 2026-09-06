@@ -10,7 +10,7 @@ const siteItems=new Map();
 const siteAliases=new Map();
 let coAppStateRevision=0;
 let coAppStateJobs=[];
-const UVD_VERSION='0.6.20';
+const UVD_VERSION='0.6.21';
 const STORAGE_SCHEMA_VERSION=6;
 // Runtime copy of detection tuning used by passive Network listeners without reading storage per request.
 let runtimeDetectionTuning=UVDDetectionTuning.normalize({});
