@@ -5,8 +5,10 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*.*.*'
+
+concurrency:
+  group: uvd-release-main
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -33,12 +35,10 @@ jobs:
           fi
 
           TAG="v${VERSION}"
-          if [[ "${GITHUB_REF_TYPE}" == "branch" ]]; then
-            if gh release view "$TAG" >/dev/null 2>&1; then
-              echo "Release ${TAG} already exists; no release work is required for this main push."
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists; no release work is required for this push."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
