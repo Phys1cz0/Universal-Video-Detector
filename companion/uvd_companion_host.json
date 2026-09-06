@@ -1,0 +1,7 @@
+{
+  "name": "universal_video_detector_companion",
+  "description": "Universal Video Detector Companion downloader",
+  "path": "__HOST_PATH__",
+  "type": "stdio",
+  "allowed_extensions": ["universal-video-detector@example.local"]
+}

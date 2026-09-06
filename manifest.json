@@ -1,0 +1,70 @@
+{
+  "manifest_version": 3,
+  "name": "Universal Video Detector",
+  "version": "0.6.20",
+  "description": "汎用動画リソース検出・累積統合・多経路取得・動的読み込み・Adapter・選択ダウンロード・Native Companion連携・保存先/フォルダ名設定・HLS/DASHダウンロード・広告確度フィルター。",
+  "permissions": [
+    "downloads",
+    "storage",
+    "webRequest",
+    "tabs",
+    "nativeMessaging",
+    "notifications",
+    "cookies"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": [
+      "settings/update-config.js",
+      "settings/detection-tuning.js",
+      "settings/diagnostics.js",
+      "background/filter-engine.js",
+      "background/service.js"
+    ]
+  },
+  "action": {
+    "default_title": "Video Detector",
+    "default_popup": "ui/popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "settings/detection-tuning.js",
+        "settings/diagnostics.js",
+        "content/detector.js",
+        "adapters/generic-adapter.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "content/main-hook.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "universal-video-detector@example.local",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  },
+  "sidebar_action": {
+    "default_title": "Video Detector",
+    "default_panel": "ui/popup.html",
+    "open_at_install": false
+  }
+}
