@@ -13,6 +13,10 @@ concurrency:
 permissions:
   contents: write
 
+env:
+  WEB_EXT_SIGN_RETRIES: 6
+  WEB_EXT_SIGN_RETRY_DELAY_SECONDS: 30
+
 jobs:
   sign-and-release:
     runs-on: ubuntu-latest
@@ -88,13 +92,27 @@ jobs:
             exit 1
           fi
           rm -rf web-ext-artifacts
-          npx --yes web-ext@latest sign \
-            --source-dir . \
-            --artifacts-dir web-ext-artifacts \
-            --channel unlisted \
-            --api-key "$WEB_EXT_API_KEY" \
-            --api-secret "$WEB_EXT_API_SECRET" \
-            --approval-timeout 900000
+          attempt=1
+          while true; do
+            echo "Mozilla signing attempt ${attempt}/${WEB_EXT_SIGN_RETRIES}"
+            if npx --yes web-ext@latest sign \
+              --source-dir . \
+              --artifacts-dir web-ext-artifacts \
+              --channel unlisted \
+              --api-key "$WEB_EXT_API_KEY" \
+              --api-secret "$WEB_EXT_API_SECRET" \
+              --approval-timeout 900000; then
+              break
+            fi
+            if (( attempt >= WEB_EXT_SIGN_RETRIES )); then
+              echo "Mozilla signing failed after ${WEB_EXT_SIGN_RETRIES} attempts." >&2
+              exit 1
+            fi
+            rm -rf web-ext-artifacts
+            echo "Signing request may be throttled or temporarily unavailable; waiting ${WEB_EXT_SIGN_RETRY_DELAY_SECONDS}s before retry."
+            sleep "$WEB_EXT_SIGN_RETRY_DELAY_SECONDS"
+            attempt=$((attempt + 1))
+          done
 
       - name: Normalize signed XPI name
         if: steps.version.outputs.skip != 'true'
