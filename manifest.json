@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Universal Video Detector",
-  "version": "0.6.22",
+  "version": "0.6.23",
   "description": "汎用動画リソース検出・累積統合・多経路取得・動的読み込み・Adapter・選択ダウンロード・Native Companion連携・保存先/フォルダ名設定・HLS/DASHダウンロード・広告確度フィルター。",
   "permissions": [
     "downloads",
