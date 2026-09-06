@@ -27,6 +27,54 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Synchronize formal extension version
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const version = process.env.VERSION;
+          const files = [
+            'ui/popup.js',
+            'background/service.js',
+            'ui/popup.html'
+          ];
+          for (const file of files) {
+            let text = fs.readFileSync(file, 'utf8');
+            if (file.endsWith('popup.js') || file.endsWith('service.js')) {
+              text = text.replace(/const UVD_VERSION='[^']+';/, `const UVD_VERSION='${version}';`);
+            } else {
+              text = text.replace(/<title>[^<]* - Video Detector<\/title>/, `<title>${version} - Video Detector</title>`);
+              text = text.replace(/(<span class="version">)[^<]*(<\/span>)/, `$1${version}$2`);
+            }
+            fs.writeFileSync(file, text);
+          }
+          NODE
+          grep -F "const UVD_VERSION='$VERSION';" ui/popup.js
+          grep -F "const UVD_VERSION='$VERSION';" background/service.js
+          grep -F "<span class=\"version\">$VERSION</span>" ui/popup.html
+
+      - name: Commit synchronized source version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ui/popup.js background/service.js ui/popup.html
+          if git diff --cached --quiet; then
+            echo "Source version is already synchronized."
+            exit 0
+          fi
+          git commit -m "Synchronize UVD extension version ${VERSION}"
+          if [[ "${GITHUB_REF_TYPE}" == "branch" && "${GITHUB_REF_NAME}" == "main" ]]; then
+            git push origin HEAD:main
+          else
+            git push origin HEAD:main
+          fi
+
       - name: Validate extension
         run: npx --yes web-ext@latest lint --source-dir . --no-input
 
