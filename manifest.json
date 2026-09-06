@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Universal Video Detector",
-  "version": "0.6.20",
+  "version": "0.6.21",
   "description": "汎用動画リソース検出・累積統合・多経路取得・動的読み込み・Adapter・選択ダウンロード・Native Companion連携・保存先/フォルダ名設定・HLS/DASHダウンロード・広告確度フィルター。",
   "permissions": [
     "downloads",
@@ -52,6 +52,7 @@
       ]
     }
   ],
+  "update_url": "https://github.com/Phys1cz0/Universal-Video-Detector/releases/latest/download/update.json",
   "browser_specific_settings": {
     "gecko": {
       "id": "universal-video-detector@example.local",
