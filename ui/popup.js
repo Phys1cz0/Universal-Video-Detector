@@ -1,4 +1,4 @@
-const UVD_VERSION='0.6.21';
+const UVD_VERSION='0.6.22';
 const POPUP_STORAGE_SCHEMA_VERSION=6;
 // Detection presets are stored independently from download/appearance settings.
 const DETECTION_PRESET_STORAGE_KEY='uvdDetectionPresets';

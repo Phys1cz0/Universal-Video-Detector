@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ja">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>0.6.21 - Video Detector</title>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>0.6.22 - Video Detector</title>
 <style>
 *{box-sizing:border-box}html{width:600px;height:600px;min-height:600px;max-height:600px;margin:0;padding:0;overflow:hidden}body{width:600px;height:600px;min-height:600px;max-height:600px;margin:0;padding:0;overflow:hidden;font:13px system-ui,sans-serif;color:var(--fg);background:var(--bg);display:flex;flex-direction:column;--bg:#fff;--fg:#222;--panel:#fff;--border:#ddd;--button:#f7f7f7;--hover:#eef3fa;--muted:#666;--accent:#1976d2}
 body.dark{--bg:#17181a;--fg:#eee;--panel:#202225;--border:#3a3d41;--button:#2b2e32;--hover:#30363d;--muted:#a8adb5;--accent:#6aa9ff}body.light{--bg:#fff;--fg:#222;--panel:#fff;--border:#ddd;--button:#f7f7f7;--hover:#eef3fa;--muted:#666;--accent:#1976d2}
@@ -13,7 +13,7 @@ header{padding:10px 14px 8px;border-bottom:1px solid var(--border);background:va
 .history-tools{padding:7px 12px;border-bottom:1px solid var(--border);display:flex;gap:6px}.preview-note{font-size:10px;color:var(--muted);margin-top:3px}.uvd-dialog{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;background:rgba(0,0,0,.22)}.uvd-dialog[hidden]{display:none}.uvd-dialog-card{width:min(430px,100%);box-sizing:border-box;padding:16px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--fg);box-shadow:0 8px 28px rgba(0,0,0,.28)}.uvd-dialog-card b{display:block;margin-bottom:8px}.uvd-dialog-card p{margin:0 0 14px;line-height:1.5;white-space:pre-wrap}.uvd-dialog-actions{display:flex;justify-content:flex-end}
 </style></head>
 <body class="size-medium text-medium">
-<header><b>Video Detector</b> <span class="version">0.6.21</span> <span id="count"></span>
+<header><b>Video Detector</b> <span class="version">0.6.22</span> <span id="count"></span>
 <div class="tabs"><button class="tab active" data-tab="videos">動画</button><button class="tab" data-tab="downloads">ダウンロード履歴</button><button class="tab" data-tab="settings">設定</button></div>
 <div class="tools" id="videoTools"><div class="tool-left"><button id="selectedDownload" disabled>選択をダウンロード</button><button id="batch">一括ダウンロード</button></div><div class="tool-right"><button id="refresh">更新</button><button id="clear">消去</button></div></div></header>
 <div id="videosPanel" class="panel active"><div id="status"><span id="statusText">読み込み中…</span><span id="downloadProgress"></span><button id="batchCancel" type="button" disabled>キャンセル</button></div><div class="hint">動画項目をクリックすると選択／解除できます。ダウンロード済み・処理中の項目は選択できません。</div><div id="list"></div></div>
