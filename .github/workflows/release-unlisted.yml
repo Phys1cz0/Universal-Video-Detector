@@ -1,0 +1,111 @@
+name: UVD Unlisted Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  sign-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Read extension version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./manifest.json').version")
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid formal UVD version: $VERSION" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Validate extension
+        run: npx --yes web-ext@latest lint --source-dir . --no-input
+
+      - name: Sign extension for self-distribution
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
+        run: |
+          if [[ -z "$WEB_EXT_API_KEY" || -z "$WEB_EXT_API_SECRET" ]]; then
+            echo "WEB_EXT_API_KEY / WEB_EXT_API_SECRET GitHub Secrets are required." >&2
+            exit 1
+          fi
+          rm -rf web-ext-artifacts
+          npx --yes web-ext@latest sign \
+            --source-dir . \
+            --artifacts-dir web-ext-artifacts \
+            --channel unlisted \
+            --api-key "$WEB_EXT_API_KEY" \
+            --api-secret "$WEB_EXT_API_SECRET" \
+            --approval-timeout 900000
+
+      - name: Normalize signed XPI name
+        id: xpi
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          XPI=$(find web-ext-artifacts -maxdepth 1 -type f -name '*.xpi' | head -n 1)
+          if [[ -z "$XPI" ]]; then
+            echo "Signed XPI was not produced." >&2
+            exit 1
+          fi
+          TARGET="Universal-Video-Detector-${VERSION}.xpi"
+          cp "$XPI" "$TARGET"
+          SHA256=$(sha256sum "$TARGET" | awk '{print $1}')
+          echo "path=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Create Firefox update manifest
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          XPI_SHA256: ${{ steps.xpi.outputs.sha256 }}
+        run: |
+          cat > update.json <<EOF
+          {
+            "addons": {
+              "universal-video-detector@example.local": {
+                "updates": [
+                  {
+                    "version": "${VERSION}",
+                    "update_link": "https://github.com/Phys1cz0/Universal-Video-Detector/releases/download/v${VERSION}/Universal-Video-Detector-${VERSION}.xpi",
+                    "update_hash": "sha256:${XPI_SHA256}"
+                  }
+                ]
+              }
+            }
+          }
+          EOF
+          node -e "JSON.parse(require('fs').readFileSync('update.json','utf8'))"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          XPI: ${{ steps.xpi.outputs.path }}
+        run: |
+          TAG="v${VERSION}"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          gh release create "$TAG" "$XPI" update.json \
+            --title "Universal Video Detector ${VERSION}" \
+            --generate-notes
+
+      - name: Verify release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release view "v${VERSION}" --json assets --jq '.assets[].name' | grep -Fx "Universal-Video-Detector-${VERSION}.xpi"
+          gh release view "v${VERSION}" --json assets --jq '.assets[].name' | grep -Fx "update.json"
