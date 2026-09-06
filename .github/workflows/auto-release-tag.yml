@@ -1,0 +1,68 @@
+name: UVD Automatic Release Tag
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  create-release-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository and tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create release tag when manifest version is new
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node -p "require('./manifest.json').version")
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid formal UVD version: $VERSION" >&2
+            exit 1
+          fi
+
+          TARGET_TAG="v${VERSION}"
+          if git rev-parse --verify --quiet "refs/tags/${TARGET_TAG}" >/dev/null; then
+            echo "Tag ${TARGET_TAG} already exists; no release trigger is needed."
+            exit 0
+          fi
+
+          highest="0.0.0"
+          while IFS= read -r tag; do
+            version="${tag#v}"
+            if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              node -e "
+                const a=process.argv[1].split('.').map(Number), b=process.argv[2].split('.').map(Number);
+                if (a.some((v,i)=>v>b[i])) process.stdout.write('1');
+                else if (a.every((v,i)=>v===b[i])) process.stdout.write('0');
+                else process.stdout.write('-1');
+              " "$version" "$highest" > /tmp/version-compare
+              if [[ "$(cat /tmp/version-compare)" == "1" ]]; then
+                highest="$version"
+              fi
+            fi
+          done < <(git tag --list 'v*.*.*')
+
+          if [[ "$VERSION" == "$highest" ]]; then
+            echo "Manifest version ${VERSION} is already the highest released version."
+            exit 0
+          fi
+
+          node -e "
+            const a=process.argv[1].split('.').map(Number), b=process.argv[2].split('.').map(Number);
+            if (a.some((v,i)=>v<b[i]) || a.every((v,i)=>v===b[i])) process.exit(1);
+          " "$VERSION" "$highest"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TARGET_TAG" -m "Universal Video Detector ${VERSION}" "$GITHUB_SHA"
+          git push origin "$TARGET_TAG"
+          echo "Created ${TARGET_TAG}; tag push will trigger the signing/release workflow automatically."
