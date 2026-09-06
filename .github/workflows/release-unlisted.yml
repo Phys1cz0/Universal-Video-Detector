@@ -86,28 +86,88 @@ jobs:
         env:
           WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
           WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
         run: |
           if [[ -z "$WEB_EXT_API_KEY" || -z "$WEB_EXT_API_SECRET" ]]; then
             echo "WEB_EXT_API_KEY / WEB_EXT_API_SECRET GitHub Secrets are required." >&2
             exit 1
           fi
+
           rm -rf web-ext-artifacts
           attempt=1
           while true; do
             echo "Mozilla signing attempt ${attempt}/${WEB_EXT_SIGN_RETRIES}"
-            if npx --yes web-ext@latest sign \
+            rm -f signing.log
+            set +e
+            npx --yes web-ext@latest sign \
               --source-dir . \
               --artifacts-dir web-ext-artifacts \
               --channel unlisted \
               --api-key "$WEB_EXT_API_KEY" \
               --api-secret "$WEB_EXT_API_SECRET" \
-              --approval-timeout 900000; then
+              --approval-timeout 900000 2>&1 | tee signing.log
+            status=${PIPESTATUS[0]}
+            set -e
+
+            if [[ "$status" -eq 0 ]]; then
               break
             fi
+
+            if grep -Fq "Version ${VERSION} already exists." signing.log; then
+              echo "Mozilla already has version ${VERSION}; retrieving the existing signed file."
+              rm -rf web-ext-artifacts
+              mkdir -p web-ext-artifacts
+
+              JWT=$(node <<'NODE'
+          const crypto = require('crypto');
+          const key = process.env.WEB_EXT_API_KEY;
+          const secret = process.env.WEB_EXT_API_SECRET;
+          const now = Math.floor(Date.now() / 1000);
+          const b64 = value => Buffer.from(value).toString('base64url');
+          const header = b64(JSON.stringify({alg:'HS256',typ:'JWT'}));
+          const payload = b64(JSON.stringify({
+            iss: key,
+            jti: crypto.randomUUID(),
+            iat: now,
+            exp: now + 60
+          }));
+          const data = `${header}.${payload}`;
+          const signature = crypto.createHmac('sha256', secret).update(data).digest('base64url');
+          process.stdout.write(`${data}.${signature}`);
+          NODE
+              )
+
+              VERSION_JSON=$(curl --fail --silent --show-error \
+                -H "Authorization: JWT ${JWT}" \
+                "https://addons.mozilla.org/api/v5/addons/addon/universal-video-detector@example.local/versions/v${VERSION}/")
+              FILE_URL=$(node -e "const d=JSON.parse(process.argv[1]); if(!d.file || !d.file.url || d.file.is_mozilla_signed_extension!==true){process.exit(2)}; process.stdout.write(d.file.url)" "$VERSION_JSON")
+
+              curl --fail --location --silent --show-error \
+                "$FILE_URL" \
+                --output "web-ext-artifacts/Universal-Video-Detector-${VERSION}.xpi"
+
+              node <<'NODE'
+          const fs = require('fs');
+          const cp = require('child_process');
+          const path = `web-ext-artifacts/Universal-Video-Detector-${process.env.VERSION}.xpi`;
+          if (!fs.existsSync(path) || fs.statSync(path).size === 0) {
+            throw new Error('Retrieved Mozilla-signed XPI is missing or empty.');
+          }
+          const listed = cp.execFileSync('unzip', ['-p', path, 'manifest.json'], {encoding:'utf8'});
+          const manifest = JSON.parse(listed);
+          if (manifest.version !== process.env.VERSION) {
+            throw new Error(`Retrieved XPI version mismatch: ${manifest.version}`);
+          }
+          NODE
+              break
+            fi
+
             if (( attempt >= WEB_EXT_SIGN_RETRIES )); then
               echo "Mozilla signing failed after ${WEB_EXT_SIGN_RETRIES} attempts." >&2
               exit 1
             fi
+
             rm -rf web-ext-artifacts
             echo "Signing request may be throttled or temporarily unavailable; waiting ${WEB_EXT_SIGN_RETRY_DELAY_SECONDS}s before retry."
             sleep "$WEB_EXT_SIGN_RETRY_DELAY_SECONDS"
