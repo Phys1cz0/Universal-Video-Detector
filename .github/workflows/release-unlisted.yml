@@ -37,14 +37,12 @@ jobs:
             echo "Invalid formal UVD version: $VERSION" >&2
             exit 1
           fi
-
           TAG="v${VERSION}"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release ${TAG} already exists; no release work is required for this push."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
@@ -57,11 +55,7 @@ jobs:
           node <<'NODE'
           const fs = require('fs');
           const version = process.env.VERSION;
-          const files = [
-            'ui/popup.js',
-            'background/service.js',
-            'ui/popup.html'
-          ];
+          const files = ['ui/popup.js','background/service.js','ui/popup.html'];
           for (const file of files) {
             let text = fs.readFileSync(file, 'utf8');
             if (file.endsWith('popup.js') || file.endsWith('service.js')) {
@@ -93,7 +87,6 @@ jobs:
             echo "WEB_EXT_API_KEY / WEB_EXT_API_SECRET GitHub Secrets are required." >&2
             exit 1
           fi
-
           rm -rf web-ext-artifacts
           attempt=1
           while true; do
@@ -109,16 +102,11 @@ jobs:
               --approval-timeout 900000 2>&1 | tee signing.log
             status=${PIPESTATUS[0]}
             set -e
-
-            if [[ "$status" -eq 0 ]]; then
-              break
-            fi
-
+            if [[ "$status" -eq 0 ]]; then break; fi
             if grep -Fq "Version ${VERSION} already exists." signing.log; then
               echo "Mozilla already has version ${VERSION}; retrieving the existing signed file."
               rm -rf web-ext-artifacts
               mkdir -p web-ext-artifacts
-
               JWT=$(node <<'NODE'
           const crypto = require('crypto');
           const key = process.env.WEB_EXT_API_KEY;
@@ -126,50 +114,29 @@ jobs:
           const now = Math.floor(Date.now() / 1000);
           const b64 = value => Buffer.from(value).toString('base64url');
           const header = b64(JSON.stringify({alg:'HS256',typ:'JWT'}));
-          const payload = b64(JSON.stringify({
-            iss: key,
-            jti: crypto.randomUUID(),
-            iat: now,
-            exp: now + 60
-          }));
+          const payload = b64(JSON.stringify({iss:key,jti:crypto.randomUUID(),iat:now,exp:now+60}));
           const data = `${header}.${payload}`;
           const signature = crypto.createHmac('sha256', secret).update(data).digest('base64url');
           process.stdout.write(`${data}.${signature}`);
           NODE
               )
-
-              VERSION_JSON=$(curl --fail --silent --show-error \
-                -H "Authorization: JWT ${JWT}" \
-                -g "https://addons.mozilla.org/api/v3/addons/universal-video-detector@example.local/versions/${VERSION}/")
-
+              VERSION_JSON=$(curl --fail --silent --show-error -H "Authorization: JWT ${JWT}" -g "https://addons.mozilla.org/api/v3/addons/universal-video-detector@example.local/versions/${VERSION}/")
               FILE_URL=$(node -e "const d=JSON.parse(process.argv[1]); const f=(d.files||[]).find(x=>x.signed===true && x.download_url); if(!f) process.exit(2); process.stdout.write(f.download_url)" "$VERSION_JSON")
-
-              curl --fail --location --silent --show-error \
-                -H "Authorization: JWT ${JWT}" \
-                -g "$FILE_URL" \
-                --output "web-ext-artifacts/Universal-Video-Detector-${VERSION}.xpi"
-
+              curl --fail --location --silent --show-error -H "Authorization: JWT ${JWT}" -g "$FILE_URL" --output "web-ext-artifacts/Universal-Video-Detector-${VERSION}.xpi"
               node <<'NODE'
           const fs = require('fs');
           const cp = require('child_process');
           const path = `web-ext-artifacts/Universal-Video-Detector-${process.env.VERSION}.xpi`;
-          if (!fs.existsSync(path) || fs.statSync(path).size === 0) {
-            throw new Error('Retrieved Mozilla-signed XPI is missing or empty.');
-          }
-          const listed = cp.execFileSync('unzip', ['-p', path, 'manifest.json'], {encoding:'utf8'});
-          const manifest = JSON.parse(listed);
-          if (manifest.version !== process.env.VERSION) {
-            throw new Error(`Retrieved XPI version mismatch: ${manifest.version}`);
-          }
+          if (!fs.existsSync(path) || fs.statSync(path).size === 0) throw new Error('Retrieved Mozilla-signed XPI is missing or empty.');
+          const manifest = JSON.parse(cp.execFileSync('unzip',['-p',path,'manifest.json'],{encoding:'utf8'}));
+          if (manifest.version !== process.env.VERSION) throw new Error(`Retrieved XPI version mismatch: ${manifest.version}`);
           NODE
               break
             fi
-
             if (( attempt >= WEB_EXT_SIGN_RETRIES )); then
               echo "Mozilla signing failed after ${WEB_EXT_SIGN_RETRIES} attempts." >&2
               exit 1
             fi
-
             rm -rf web-ext-artifacts
             echo "Signing request may be throttled or temporarily unavailable; waiting ${WEB_EXT_SIGN_RETRY_DELAY_SECONDS}s before retry."
             sleep "$WEB_EXT_SIGN_RETRY_DELAY_SECONDS"
@@ -184,10 +151,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           XPI=$(find web-ext-artifacts -maxdepth 1 -type f -name '*.xpi' | head -n 1)
-          if [[ -z "$XPI" ]]; then
-            echo "Signed XPI was not produced." >&2
-            exit 1
-          fi
+          if [[ -z "$XPI" ]]; then echo "Signed XPI was not produced." >&2; exit 1; fi
           TARGET="Universal-Video-Detector-${VERSION}.xpi"
           cp "$XPI" "$TARGET"
           SHA256=$(sha256sum "$TARGET" | awk '{print $1}')
@@ -225,14 +189,14 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           XPI: ${{ steps.xpi.outputs.path }}
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           TAG="v${VERSION}"
           if ! git rev-parse --verify --quiet "refs/tags/${TAG}" >/dev/null; then
             git tag -a "$TAG" -m "Universal Video Detector ${VERSION}" "$GITHUB_SHA"
             git push origin "$TAG"
           fi
-          gh release create "$TAG" "$XPI" update.json \
-            --title "Universal Video Detector ${VERSION}" \
-            --generate-notes
+          gh release create "$TAG" "$XPI" update.json --title "Universal Video Detector ${VERSION}" --generate-notes
 
       - name: Verify release assets
         if: steps.version.outputs.skip != 'true'
