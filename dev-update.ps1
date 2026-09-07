@@ -77,8 +77,9 @@ try {
         throw 'Staged manifest.json is missing.'
     }
 
-    # Copy the extension tree first and manifest.json last so web-ext observes
-    # the final formal version only after the rest of the tree is present.
+    # The development source is loaded by web-ext as an unpacked extension.
+    # Keep all source files from the same GitHub snapshot, then synchronize
+    # the displayed/runtime version fields from manifest.json before reload.
     foreach ($name in $allowed | Where-Object { $_ -ne 'manifest.json' }) {
         $src = Join-Path $stageDir $name
         if (Test-Path -LiteralPath $src) {
@@ -87,26 +88,35 @@ try {
     }
     Copy-Item -LiteralPath (Join-Path $stageDir 'manifest.json') -Destination (Join-Path $SourceDir 'manifest.json') -Force
 
-    # The GitHub source may intentionally keep build-time version synchronization
-    # out of the source files. Normalize only the developer copy to the manifest's
-    # formal x.y.z version; production files are not modified by this tooling.
-    $syncFiles = @('ui/popup.js','background/service.js','ui/popup.html')
-    foreach ($relative in $syncFiles) {
-        $path = Join-Path $SourceDir $relative
-        if (-not (Test-Path -LiteralPath $path)) { throw "Developer source file missing: $relative" }
-        $text = Get-Content -LiteralPath $path -Raw
-        if ($relative.EndsWith('popup.js') -or $relative.EndsWith('service.js')) {
-            $text = [regex]::Replace($text, "const UVD_VERSION='[^']+';", "const UVD_VERSION='$($remoteVersion.ToString())';", 1)
-        } else {
-            $text = [regex]::Replace($text, '<title>[^<]* - Video Detector</title>', "<title>$($remoteVersion.ToString()) - Video Detector</title>", 1)
-            $text = [regex]::Replace($text, '(<span class="version">)[^<]*(</span>)', "`$1$($remoteVersion.ToString())`$2", 1)
-        }
-        Set-Content -LiteralPath $path -Value $text -Encoding utf8NoBOM
+    $versionedFiles = @(
+        Join-Path $SourceDir 'ui/popup.js',
+        Join-Path $SourceDir 'background/service.js'
+    )
+    foreach ($file in $versionedFiles) {
+        if (-not (Test-Path -LiteralPath $file)) { throw "Required versioned source file is missing: $file" }
+        $text = Get-Content -LiteralPath $file -Raw
+        $updated = [regex]::Replace($text, "const UVD_VERSION='[^']+';", "const UVD_VERSION='$($remoteVersion.ToString())';", 1)
+        if ($updated -eq $text) { throw "UVD_VERSION declaration was not found: $file" }
+        Set-Content -LiteralPath $file -Value $updated -Encoding utf8NoBOM
     }
+
+    $popupHtml = Join-Path $SourceDir 'ui/popup.html'
+    if (-not (Test-Path -LiteralPath $popupHtml)) { throw "Required popup source file is missing: $popupHtml" }
+    $html = Get-Content -LiteralPath $popupHtml -Raw
+    $html = [regex]::Replace($html, '<title>[^<]* - Video Detector</title>', "<title>$($remoteVersion.ToString()) - Video Detector</title>", 1)
+    $html = [regex]::Replace($html, '(<span class="version">)[^<]*(</span>)', "`$1$($remoteVersion.ToString())`$2", 1)
+    Set-Content -LiteralPath $popupHtml -Value $html -Encoding utf8NoBOM
 
     $installedManifest = Get-Content -LiteralPath (Join-Path $SourceDir 'manifest.json') -Raw | ConvertFrom-Json
     $installedVersion = Get-FormalVersion ([string]$installedManifest.version)
     if ($installedVersion -ne $remoteVersion) { throw "Installed version verification failed: $installedVersion != $remoteVersion" }
+
+    foreach ($file in $versionedFiles) {
+        $text = Get-Content -LiteralPath $file -Raw
+        if ($text -notmatch [regex]::Escape("const UVD_VERSION='$($remoteVersion.ToString())';")) { throw "Installed runtime version verification failed: $file" }
+    }
+    $html = Get-Content -LiteralPath $popupHtml -Raw
+    if ($html -notmatch [regex]::Escape("<span class=\"version\">$($remoteVersion.ToString())</span>")) { throw 'Installed popup version verification failed.' }
 
     Write-Host "Updated UVD Developer source to $($remoteVersion.ToString())."
     Write-Host "If web-ext run is active for this source directory, Firefox will reload the extension automatically."
