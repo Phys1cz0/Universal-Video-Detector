@@ -140,11 +140,13 @@ jobs:
 
               VERSION_JSON=$(curl --fail --silent --show-error \
                 -H "Authorization: JWT ${JWT}" \
-                "https://addons.mozilla.org/api/v5/addons/addon/universal-video-detector@example.local/versions/v${VERSION}/")
-              FILE_URL=$(node -e "const d=JSON.parse(process.argv[1]); if(!d.file || !d.file.url || d.file.is_mozilla_signed_extension!==true){process.exit(2)}; process.stdout.write(d.file.url)" "$VERSION_JSON")
+                -g "https://addons.mozilla.org/api/v3/addons/universal-video-detector@example.local/versions/${VERSION}/")
+
+              FILE_URL=$(node -e "const d=JSON.parse(process.argv[1]); const f=(d.files||[]).find(x=>x.signed===true && x.download_url); if(!f) process.exit(2); process.stdout.write(f.download_url)" "$VERSION_JSON")
 
               curl --fail --location --silent --show-error \
-                "$FILE_URL" \
+                -H "Authorization: JWT ${JWT}" \
+                -g "$FILE_URL" \
                 --output "web-ext-artifacts/Universal-Video-Detector-${VERSION}.xpi"
 
               node <<'NODE'
