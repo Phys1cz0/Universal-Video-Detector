@@ -25,10 +25,12 @@ $SourceDir = [IO.Path]::GetFullPath($SourceDir)
 $parent = Split-Path -Parent $SourceDir
 New-Item -ItemType Directory -Force -Path $parent | Out-Null
 
+$xpiPath = Join-Path $SourceDir 'UVD-Developer.xpi'
 $tempRoot = Join-Path $env:TEMP ("UVD-DevUpdate-" + [guid]::NewGuid().ToString('N'))
 $zipPath = Join-Path $tempRoot 'source.zip'
 $extractRoot = Join-Path $tempRoot 'extract'
 $stageDir = Join-Path $tempRoot 'stage'
+$xpiTemp = Join-Path $tempRoot 'UVD-Developer.xpi'
 New-Item -ItemType Directory -Force -Path $tempRoot,$extractRoot,$stageDir | Out-Null
 
 try {
@@ -82,9 +84,6 @@ try {
         throw 'Staged manifest.json is missing.'
     }
 
-    # The development source is loaded by web-ext as an unpacked extension.
-    # Keep all source files from the same GitHub snapshot, then synchronize
-    # the displayed/runtime version fields from manifest.json before reload.
     foreach ($name in $allowed | Where-Object { $_ -ne 'manifest.json' }) {
         $src = Join-Path $stageDir $name
         if (Test-Path -LiteralPath $src) {
@@ -120,11 +119,16 @@ try {
         $text = Get-Content -LiteralPath $file -Raw
         if ($text -notmatch [regex]::Escape("const UVD_VERSION='$($remoteVersion.ToString())';")) { throw "Installed runtime version verification failed: $file" }
     }
-    $html = Get-Content -LiteralPath $popupHtml -Raw
-    if ($html -notmatch [regex]::Escape("<span class=\"version\">$($remoteVersion.ToString())</span>")) { throw 'Installed popup version verification failed.' }
 
-    Write-Host "Updated UVD Developer source to $($remoteVersion.ToString())."
-    Write-Host "If web-ext run is active for this source directory, Firefox will reload the extension automatically."
+    # Firefox Developer Edition policy points to this stable local XPI path.
+    # Replacing the XPI makes Firefox update/reinstall the extension automatically.
+    $xpiEntries = @('manifest.json','THIRD-PARTY-NOTICES.md','adapters','background','content','settings','ui')
+    if (Test-Path -LiteralPath $xpiTemp) { Remove-Item -LiteralPath $xpiTemp -Force }
+    Compress-Archive -Path ($xpiEntries | ForEach-Object { Join-Path $SourceDir $_ }) -DestinationPath $xpiTemp -Force
+    Move-Item -LiteralPath $xpiTemp -Destination $xpiPath -Force
+
+    Write-Host "Updated UVD Developer source and XPI to $($remoteVersion.ToString())."
+    Write-Host "Firefox Developer Edition will detect the changed local XPI when the developer policy is installed."
 } finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
