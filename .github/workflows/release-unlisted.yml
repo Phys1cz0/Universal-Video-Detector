@@ -2,13 +2,15 @@ name: UVD Unlisted Release
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
+    inputs:
+      version:
+        description: 'Formal x.y.z version to submit to Mozilla and publish'
+        required: true
+        type: string
 
 concurrency:
-  group: uvd-release-main
-  cancel-in-progress: true
+  group: uvd-formal-release
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -26,28 +28,34 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Read and validate extension version
+      - name: Read and validate formal release version
         id: version
         shell: bash
         env:
+          REQUESTED_VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION=$(node -p "require('./manifest.json').version")
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Invalid formal UVD version: $VERSION" >&2
+            echo "Invalid formal UVD version in manifest: $VERSION" >&2
+            exit 1
+          fi
+          if [[ ! "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid requested formal version: $REQUESTED_VERSION" >&2
+            exit 1
+          fi
+          if [[ "$VERSION" != "$REQUESTED_VERSION" ]]; then
+            echo "Requested version $REQUESTED_VERSION does not match manifest version $VERSION." >&2
             exit 1
           fi
           TAG="v${VERSION}"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release ${TAG} already exists; no release work is required for this push."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "Release ${TAG} already exists; refusing duplicate formal release." >&2
+            exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Synchronize formal extension version in build tree
-        if: steps.version.outputs.skip != 'true'
         shell: bash
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -72,11 +80,9 @@ jobs:
           grep -F "<span class=\"version\">$VERSION</span>" ui/popup.html
 
       - name: Validate extension
-        if: steps.version.outputs.skip != 'true'
-        run: npx --yes web-ext@latest lint --source-dir . --no-input
+        run: npx --yes web-ext@latest lint --source-dir . --no-input --ignore-files 'dev-*.ps1'
 
       - name: Sign extension for self-distribution
-        if: steps.version.outputs.skip != 'true'
         env:
           WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
           WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
@@ -99,7 +105,8 @@ jobs:
               --channel unlisted \
               --api-key "$WEB_EXT_API_KEY" \
               --api-secret "$WEB_EXT_API_SECRET" \
-              --approval-timeout 900000 2>&1 | tee signing.log
+              --approval-timeout 900000 \
+              --ignore-files 'dev-*.ps1' 2>&1 | tee signing.log
             status=${PIPESTATUS[0]}
             set -e
             if [[ "$status" -eq 0 ]]; then break; fi
@@ -144,7 +151,6 @@ jobs:
           done
 
       - name: Normalize signed XPI name
-        if: steps.version.outputs.skip != 'true'
         id: xpi
         shell: bash
         env:
@@ -159,7 +165,6 @@ jobs:
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
 
       - name: Create Firefox update manifest
-        if: steps.version.outputs.skip != 'true'
         shell: bash
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -183,7 +188,6 @@ jobs:
           node -e "JSON.parse(require('fs').readFileSync('update.json','utf8'))"
 
       - name: Create GitHub release
-        if: steps.version.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -199,7 +203,6 @@ jobs:
           gh release create "$TAG" "$XPI" update.json --title "Universal Video Detector ${VERSION}" --generate-notes
 
       - name: Verify release assets
-        if: steps.version.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
