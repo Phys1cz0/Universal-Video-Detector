@@ -87,6 +87,23 @@ try {
     }
     Copy-Item -LiteralPath (Join-Path $stageDir 'manifest.json') -Destination (Join-Path $SourceDir 'manifest.json') -Force
 
+    # The GitHub source may intentionally keep build-time version synchronization
+    # out of the source files. Normalize only the developer copy to the manifest's
+    # formal x.y.z version; production files are not modified by this tooling.
+    $syncFiles = @('ui/popup.js','background/service.js','ui/popup.html')
+    foreach ($relative in $syncFiles) {
+        $path = Join-Path $SourceDir $relative
+        if (-not (Test-Path -LiteralPath $path)) { throw "Developer source file missing: $relative" }
+        $text = Get-Content -LiteralPath $path -Raw
+        if ($relative.EndsWith('popup.js') -or $relative.EndsWith('service.js')) {
+            $text = [regex]::Replace($text, "const UVD_VERSION='[^']+';", "const UVD_VERSION='$($remoteVersion.ToString())';", 1)
+        } else {
+            $text = [regex]::Replace($text, '<title>[^<]* - Video Detector</title>', "<title>$($remoteVersion.ToString()) - Video Detector</title>", 1)
+            $text = [regex]::Replace($text, '(<span class="version">)[^<]*(</span>)', "`$1$($remoteVersion.ToString())`$2", 1)
+        }
+        Set-Content -LiteralPath $path -Value $text -Encoding utf8NoBOM
+    }
+
     $installedManifest = Get-Content -LiteralPath (Join-Path $SourceDir 'manifest.json') -Raw | ConvertFrom-Json
     $installedVersion = Get-FormalVersion ([string]$installedManifest.version)
     if ($installedVersion -ne $remoteVersion) { throw "Installed version verification failed: $installedVersion != $remoteVersion" }
