@@ -13,6 +13,11 @@ function Get-FormalVersion([string]$Value) {
     return [version]::new([int]$m.Groups[1].Value, [int]$m.Groups[2].Value, [int]$m.Groups[3].Value)
 }
 
+function Write-Utf8NoBom([string]$Path, [string]$Text) {
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, $Text, $utf8)
+}
+
 if ([string]::IsNullOrWhiteSpace($SourceDir)) {
     $SourceDir = Join-Path $env:LOCALAPPDATA 'Universal-Video-Detector-Dev'
 }
@@ -89,15 +94,15 @@ try {
     Copy-Item -LiteralPath (Join-Path $stageDir 'manifest.json') -Destination (Join-Path $SourceDir 'manifest.json') -Force
 
     $versionedFiles = @(
-        Join-Path $SourceDir 'ui/popup.js',
-        Join-Path $SourceDir 'background/service.js'
+        (Join-Path $SourceDir 'ui/popup.js'),
+        (Join-Path $SourceDir 'background/service.js')
     )
     foreach ($file in $versionedFiles) {
         if (-not (Test-Path -LiteralPath $file)) { throw "Required versioned source file is missing: $file" }
         $text = Get-Content -LiteralPath $file -Raw
         $updated = [regex]::Replace($text, "const UVD_VERSION='[^']+';", "const UVD_VERSION='$($remoteVersion.ToString())';", 1)
         if ($updated -eq $text) { throw "UVD_VERSION declaration was not found: $file" }
-        Set-Content -LiteralPath $file -Value $updated -Encoding utf8NoBOM
+        Write-Utf8NoBom -Path $file -Text $updated
     }
 
     $popupHtml = Join-Path $SourceDir 'ui/popup.html'
@@ -105,7 +110,7 @@ try {
     $html = Get-Content -LiteralPath $popupHtml -Raw
     $html = [regex]::Replace($html, '<title>[^<]* - Video Detector</title>', "<title>$($remoteVersion.ToString()) - Video Detector</title>", 1)
     $html = [regex]::Replace($html, '(<span class="version">)[^<]*(</span>)', "`$1$($remoteVersion.ToString())`$2", 1)
-    Set-Content -LiteralPath $popupHtml -Value $html -Encoding utf8NoBOM
+    Write-Utf8NoBom -Path $popupHtml -Text $html
 
     $installedManifest = Get-Content -LiteralPath (Join-Path $SourceDir 'manifest.json') -Raw | ConvertFrom-Json
     $installedVersion = Get-FormalVersion ([string]$installedManifest.version)
