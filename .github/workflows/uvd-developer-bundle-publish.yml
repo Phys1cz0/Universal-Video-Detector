@@ -1,0 +1,81 @@
+name: UVD Developer Bundle Release
+
+on:
+  push:
+    paths:
+      - '._uvd-release/READY.json'
+      - '._uvd-release/chunk-*.txt'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Developer Bundle version'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Publish exact Developer Bundle
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f ._uvd-release/READY.json ]]; then
+            echo 'READY.json not found; nothing to publish.'
+            exit 0
+          fi
+
+          version="$(jq -r '.version' ._uvd-release/READY.json)"
+          tag="$(jq -r '.tag' ._uvd-release/READY.json)"
+          asset="$(jq -r '.asset' ._uvd-release/READY.json)"
+          expected_sha="$(jq -r '.sha256' ._uvd-release/READY.json)"
+          expected_size="$(jq -r '.size' ._uvd-release/READY.json)"
+          chunks="$(jq -r '.chunks' ._uvd-release/READY.json)"
+
+          if [[ -n "${INPUT_VERSION:-}" && "$INPUT_VERSION" != "$version" ]]; then
+            echo "Input version does not match READY.json" >&2
+            exit 1
+          fi
+          [[ "$tag" == "v$version" ]] || { echo 'Invalid tag/version relationship' >&2; exit 1; }
+          [[ "$asset" == "UVD-Developer-Bundle-$version.zip" ]] || { echo 'Invalid asset name' >&2; exit 1; }
+          [[ "$chunks" =~ ^[0-9]+$ ]] || { echo 'Invalid chunk count' >&2; exit 1; }
+
+          rm -f "$asset"
+          for i in $(seq -w 0 $((chunks - 1))); do
+            f="._uvd-release/chunk-$i.txt"
+            [[ -f "$f" ]] || { echo "Missing $f" >&2; exit 1; }
+            cat "$f" >> bundle.b64
+          done
+          base64 -d bundle.b64 > "$asset"
+
+          actual_size="$(stat -c '%s' "$asset")"
+          actual_sha="$(sha256sum "$asset" | awk '{print $1}')"
+          [[ "$actual_size" == "$expected_size" ]] || { echo "Size mismatch: $actual_size != $expected_size" >&2; exit 1; }
+          [[ "$actual_sha" == "$expected_sha" ]] || { echo "SHA256 mismatch: $actual_sha != $expected_sha" >&2; exit 1; }
+
+          gh release delete "$tag" --yes 2>/dev/null || true
+          git push origin ":refs/tags/$tag" 2>/dev/null || true
+          gh release create "$tag" "$asset" --title "UVD Developer Bundle $version" --notes "Exact Developer Bundle $version published by the UVD release pipeline. SHA-256: $actual_sha"
+          gh release view "$tag" --json tagName,isDraft,isPrerelease,assets
+
+      - name: Cleanup temporary payload
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f bundle.b64 "UVD-Developer-Bundle-$(jq -r '.version' ._uvd-release/READY.json).zip"
+          git rm -r ._uvd-release
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'ci: remove temporary Developer Bundle payload' || exit 0
+          git push
